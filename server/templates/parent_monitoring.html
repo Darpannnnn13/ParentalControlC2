@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Parent Monitoring</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <style>
+        body { background-color: #f0f2f5; }
+        .status-badge { font-size: 0.8em; }
+        .device-card { transition: all 0.3s; border-left: 4px solid #007bff; }
+        .device-card:hover { box-shadow: 0 4px 12px rgba(0,123,255,0.3); }
+        .device-card.online { border-left-color: #28a745; }
+        .device-card.offline { border-left-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/parent/dashboard">👨‍👩‍👧 Parent Control</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/parent/dashboard">📊 Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/parent/monitoring">📱 Monitoring</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/parent/subscription">💎 Subscription</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/parent/reports">📊 Reports</a>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown">
+                            👤 {{ current_user.email }}
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="profileDropdown">
+                            <li><a class="dropdown-item" href="/parent/settings">⚙️ Settings</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/logout">🚪 Logout</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Filter & Search -->
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <input type="text" class="form-control" id="searchDevice" placeholder="🔍 Search device by name, user, or IP...">
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="filterStatus">
+                            <option value="">All Devices</option>
+                            <option value="online">Online Only</option>
+                            <option value="offline">Offline Only</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-primary w-100" onclick="refreshDevices()">🔄 Refresh</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Monitored Devices Grid -->
+        <div class="row" id="devicesContainer">
+            {% if pcs %}
+                {% for pc in pcs %}
+                <div class="col-lg-6 col-xl-4 mb-4">
+                    <div class="card device-card shadow-sm {% if (now - pc.last_seen) < 120 %}online{% else %}offline{% endif %}">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0">{{ pc.pc_name }}</h6>
+                                <small class="text-muted">{{ pc.username }}</small>
+                            </div>
+                            {% if (now - pc.last_seen) < 120 %}
+                                <span class="badge bg-success status-badge">🟢 Online</span>
+                            {% else %}
+                                <span class="badge bg-secondary status-badge">⚪ Offline</span>
+                            {% endif %}
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text small mb-2">
+                                <strong>IP:</strong> {{ pc.ip_public }}<br>
+                                <strong>OS:</strong> {{ pc.os_version }}<br>
+                                <strong>Last Seen:</strong> {{ pc.last_seen_formatted | default('Just now') }}
+                            </p>
+                            <div class="d-grid gap-2">
+                                <a href="/parent/pc/{{ pc.pc_id }}" class="btn btn-primary btn-sm">⚙️ Live Control</a>
+                                <button class="btn btn-outline-info btn-sm" onclick="viewStats('{{ pc.pc_id }}')">📊 Statistics</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="col-12">
+                    <div class="alert alert-warning text-center shadow-sm">
+                        <h4>📱 No devices assigned yet</h4>
+                        <p class="mb-2">You haven't added any devices for monitoring.</p>
+                        <small class="text-muted">Please ensure a device has been registered and assigned to your account in the dashboard.</small>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Monitoring Functions Panel -->
+        <div class="row mt-5">
+            <div class="col-12">
+                <h5 class="mb-4">🎯 Monitoring Functions</h5>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Live Monitoring -->
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h6 class="mb-0">👁️ Live Monitoring</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">Real-time view of device screen, webcam, and audio</p>
+                        <ul class="list-unstyled">
+                            <li>✓ Live Screenshots (5s intervals)</li>
+                            <li>✓ Webcam Stream</li>
+                            <li>✓ Audio Recording</li>
+                            <li>✓ Screen Recording</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Tracking -->
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="mb-0">📋 Activity Tracking</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">Track all device activities in real-time</p>
+                        <ul class="list-unstyled">
+                            <li>✓ Keystroke Logging</li>
+                            <li>✓ Website History</li>
+                            <li>✓ App Usage Tracking</li>
+                            <li>✓ Window Activity</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Control -->
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-danger text-white">
+                        <h6 class="mb-0">🛡️ Content Control</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">Block inappropriate websites and applications</p>
+                        <ul class="list-unstyled">
+                            <li>✓ Website Blocking</li>
+                            <li>✓ App Blocking</li>
+                            <li>✓ Screen Time Limits</li>
+                            <li>✓ Internet Blocking</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Location & Security -->
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-warning text-white">
+                        <h6 class="mb-0">📍 Location & Security</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">Track location and security threats</p>
+                        <ul class="list-unstyled">
+                            <li>✓ GPS Tracking</li>
+                            <li>✓ WiFi Geofencing</li>
+                            <li>✓ Anomaly Detection</li>
+                            <li>✓ Threat Alerts</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Remote Control -->
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h6 class="mb-0">🎮 Remote Control</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">Control device actions remotely</p>
+                        <ul class="list-unstyled">
+                            <li>✓ Remote Command Execution</li>
+                            <li>✓ Shutdown/Restart</li>
+                            <li>✓ Mouse & Keyboard Control</li>
+                            <li>✓ Process Management</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Analysis -->
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-secondary text-white">
+                        <h6 class="mb-0">🤖 AI Analysis</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">Advanced behavior and content analysis</p>
+                        <ul class="list-unstyled">
+                            <li>✓ Behavior Analysis</li>
+                            <li>✓ Content Classification</li>
+                            <li>✓ Sentiment Analysis</li>
+                            <li>✓ Risk Scoring</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="card mt-5 shadow">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">📊 Quick Statistics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h4 class="text-primary">{{ pcs|length }}</h4>
+                        <p class="text-muted">Monitored Devices</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 class="text-success">{{ online_count }}</h4>
+                        <p class="text-muted">Online Now</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 class="text-warning">{{ alerts_count }}</h4>
+                        <p class="text-muted">Active Alerts</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 class="text-danger">{{ blocked_attempts }}</h4>
+                        <p class="text-muted">Blocked Attempts</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function refreshDevices() {
+            location.reload();
+        }
+
+        function viewStats(pcId) {
+            alert('Opening statistics for ' + pcId);
+            // TODO: Implement statistics modal/page
+        }
+
+        // Filter devices
+        document.getElementById('searchDevice').addEventListener('input', function() {
+            const search = this.value.toLowerCase();
+            document.querySelectorAll('.device-card').forEach(card => {
+                const text = card.innerText.toLowerCase();
+                card.closest('.col-lg-6').style.display = text.includes(search) ? '' : 'none';
+            });
+        });
+
+        document.getElementById('filterStatus').addEventListener('change', function() {
+            const status = this.value;
+            document.querySelectorAll('.device-card').forEach(card => {
+                if(!status || card.classList.contains(status)) {
+                    card.closest('.col-lg-6').style.display = '';
+                } else {
+                    card.closest('.col-lg-6').style.display = 'none';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
